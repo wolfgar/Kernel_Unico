@@ -55,6 +55,10 @@
 #include <linux/spi/tsc2006.h>
 #include <linux/i2c/msp430.h>
 
+#if defined(CONFIG_TOUCHSCREEN_SITRONIX_I2C_TOUCH) || defined(CONFIG_TOUCHSCREEN_SITRONIX_I2C_TOUCH_MODULE)
+#include <linux/input/sitronix_i2c_touch.h>
+#endif
+
 #include <mach/common.h>
 #include <mach/hardware.h>
 #include <mach/mxc_dvfs.h>
@@ -92,6 +96,9 @@
 /******************* LVDS *******************/
 #define MX6_SECO_UDOO_LVDS_BLT_CTRL		IMX_GPIO_NR(1, 4) 
 #define MX6_SECO_UDOO_LVDS_PNL_CTRL		IMX_GPIO_NR(1, 2)
+/******************* TOUCH *******************/
+#define MX6_UDOO_TOUCH_RST		IMX_GPIO_NR(1, 15)
+#define MX6_UDOO_TOUCH_INT              IMX_GPIO_NR(1, 13)      
 /******************* ETHERNET *******************/
 #define MX6_UDOO_FEC_RESET		IMX_GPIO_NR(3, 23)
 #define MX6_ENET_125MHz_EN		IMX_GPIO_NR(6, 24)
@@ -99,6 +106,8 @@
 #define MX6_ENET_RD2			IMX_GPIO_NR(6, 28)
 #define MX6_ENET_RD1			IMX_GPIO_NR(6, 27)
 #define MX6_ENET_RD0			IMX_GPIO_NR(6, 25)
+/******************* CAM *******************/
+#define MX6_CAMERA_RST		IMX_GPIO_NR(6, 5)
 /******************* AUDIO *******************/
 #ifdef CONFIG_UDOO_SND_SOC_IMX_AC97_VT1613
 #define AC97_GPIO_RESET				IMX_GPIO_NR(2, 30)
@@ -175,7 +184,7 @@ static int mx6q_seco_UDOO_sata_init(struct device *dev, void __iomem *addr) {
 
 	/* enable SATA_PHY PLL */
 	tmpdata = readl(IOMUXC_GPR13);
-	writel(((tmpdata & ~0x2) | 0x2), IOMUXC_GPR13);
+	writel((tmpdata | 0x2), IOMUXC_GPR13);
 
 	/* Get the AHB clock rate, and configure the TIMER1MS reg later */
 	clk = clk_get(NULL, "ahb");
@@ -233,6 +242,54 @@ static inline void mx6q_seco_UDOO_init_uart(void) {
     imx6q_add_imx_uart(3, NULL);
 }
 
+/***********************************************************************
+ *                    MIPI - CSI 5Mpx OV5640 CAMERA on CN11                        *
+ ***********************************************************************/
+
+#if defined(CONFIG_MXC_CAMERA_OV5640_MIPI) || defined(CONFIG_MXC_CAMERA_OV5640_MIPI_MODULE)
+
+static void ov5640_mipi_camera_io_init(void)
+{
+	struct clk *clko1;
+	
+	if (cpu_is_mx6q())
+		mxc_iomux_v3_setup_pad(MX6Q_PAD_CSI0_MCLK__CCM_CLKO);
+	else
+		mxc_iomux_v3_setup_pad(MX6DL_PAD_CSI0_MCLK__CCM_CLKO);
+	
+	clko1 = clk_get(NULL, "clko_clk");
+	if (IS_ERR(clko1)) {
+		pr_err("can't get CLKO1 clock.\n");
+	} else {
+		long round = clk_round_rate(clko1, 27000000);
+		clk_set_rate(clko1, round);
+		clk_enable(clko1);
+	}
+	
+	/* Camera reset */
+	gpio_request(MX6_CAMERA_RST, "cam-reset");
+	gpio_direction_output(MX6_CAMERA_RST, 0);
+	msleep(1);
+	gpio_set_value(MX6_CAMERA_RST, 1);
+	msleep(100);
+	
+/* for mx6dl, mipi virtual channel 1 connect to csi 1*/
+	if (cpu_is_mx6dl())
+		mxc_iomux_set_gpr_register(13, 3, 3, 1);
+}
+
+static void ov5640_mipi_camera_powerdown(int powerdown)
+{
+}
+
+static struct fsl_mxc_camera_platform_data ov5640_mipi_data = {
+	.mclk = 22000000,
+	.csi = 0,
+	.io_init = ov5640_mipi_camera_io_init,
+	.pwdn = ov5640_mipi_camera_powerdown,
+};
+#endif //  if defined(CONFIG_MXC_CAMERA_OV5640_MIPI) || defined(CONFIG_MXC_CAMERA_OV5640_MIPI_MODULE)
+
 
 /***********************************************************************
  *                                   USB                               *
@@ -259,6 +316,45 @@ static void __init imx6q_seco_UDOO_init_usb(void) {
 /***********************************************************************
  *                               GPU - IPU                             *
  ***********************************************************************/
+
+static unsigned long gpu_reserved_mem = SZ_128M;
+static int __init early_gpu_res_mem(char *arg)
+{
+	int gpu_reserved_memory_selector = 128;
+        gpu_reserved_memory_selector = simple_strtoul(arg, NULL, 0);
+
+        switch (gpu_reserved_memory_selector) {
+                case 1:
+			gpu_reserved_mem = SZ_1M;
+			break;
+                case 8:
+			gpu_reserved_mem = SZ_8M;
+			break;
+                case 16:
+			gpu_reserved_mem = SZ_16M;
+			break;
+                case 32:
+			gpu_reserved_mem = SZ_32M;
+			break;
+                case 64:
+			gpu_reserved_mem = SZ_64M;
+			break;
+                case 128:
+			gpu_reserved_mem = SZ_128M;
+			break;
+                case 256:
+			gpu_reserved_mem = SZ_256M;
+			break;
+                default:
+        		printk("Warn: Unrecognized GPU reserved memory size. Valid value are: 1, 8, 16, 32, 64, 128, 256.\n");
+                        gpu_reserved_mem = SZ_128M;
+                        break;
+
+        }
+        printk("GPU reserved memory size = %d\n", gpu_reserved_mem);
+        return 0;
+}
+early_param("gpu_memory", early_gpu_res_mem);
 
 static struct viv_gpu_platform_data imx6q_gpu_pdata __initdata = {
 	.reserved_mem_size = SZ_128M,
@@ -649,6 +745,31 @@ static void pre_halt_signal (void) {
 static void post_halt_signal (void) {
 }*/
 
+#if defined(CONFIG_TOUCHSCREEN_SITRONIX_I2C_TOUCH) || defined(CONFIG_TOUCHSCREEN_SITRONIX_I2C_TOUCH_MODULE)
+
+static void sitronix_reset_ic(void) {
+	printk("%s\n", __FUNCTION__);
+	gpio_direction_output(MX6_UDOO_TOUCH_RST, 1);
+	gpio_set_value(MX6_UDOO_TOUCH_RST, 0);
+	mdelay(1);
+	gpio_set_value(MX6_UDOO_TOUCH_RST, 1);
+	//gpio_free(MULTITOUCH_RESET_GPIO);
+}
+
+static int sitronix_get_int_status(void)
+{
+//	printk("%s\n", __FUNCTION__);
+	return gpio_get_value(MX6_UDOO_TOUCH_INT);
+}
+
+struct sitronix_i2c_touch_platform_data 	touch_i2c_conf ={
+	.get_int_status = sitronix_get_int_status,
+	.reset_ic = sitronix_reset_ic,
+};
+
+#endif // CONFIG_TOUCHSCREEN_SITRONIX_I2C_TOUCH
+
+
 static struct i2c_board_info mxc_i2c0_board_info[] __initdata = {
 
 };
@@ -660,6 +781,20 @@ static struct i2c_board_info mxc_i2c1_board_info[] __initdata = {
 };
 
 static struct i2c_board_info mxc_i2c2_board_info[] __initdata = {
+#if defined(CONFIG_TOUCHSCREEN_SITRONIX_I2C_TOUCH) || defined(CONFIG_TOUCHSCREEN_SITRONIX_I2C_TOUCH_MODULE)
+	{
+		I2C_BOARD_INFO(SITRONIX_I2C_TOUCH_DRV_NAME, 0x55),
+		.irq		= gpio_to_irq(MX6_UDOO_TOUCH_INT),
+		.platform_data 	= &touch_i2c_conf,
+	},
+#endif
+
+#if defined(CONFIG_MXC_CAMERA_OV5640_MIPI) || defined(CONFIG_MXC_CAMERA_OV5640_MIPI_MODULE)
+	{
+		I2C_BOARD_INFO("ov5640_mipi", 0x3c),
+       		.platform_data = (void *)&ov5640_mipi_data,
+        },
+#endif
 };
 
 
@@ -670,6 +805,19 @@ static struct i2c_board_info mxc_i2c2_board_info[] __initdata = {
 static const struct flexcan_platform_data
         mx6q_sabrelite_flexcan0_pdata __initconst = {
         .transceiver_switch = NULL,
+};
+
+/***********************************************************************
+ *                                   MIPI                              *
+ ***********************************************************************/
+
+static struct mipi_csi2_platform_data mipi_csi2_pdata = {
+	.ipu_id	 = 0,
+	.csi_id = 0,
+	.v_channel = 0,
+	.lanes = 2,
+	.dphy_clk = "mipi_pllref_clk",
+	.pixel_clk = "emi_clk",
 };
 
 
@@ -873,7 +1021,7 @@ static void __init mx6_seco_UDOO_board_init(void)
 	imx6q_add_v4l2_output(0);
 	imx6q_add_v4l2_capture(0, &capture_data[0]);
 	imx6q_add_v4l2_capture(1, &capture_data[1]);
-	//imx6q_add_mipi_csi2(&mipi_csi2_pdata);
+	imx6q_add_mipi_csi2(&mipi_csi2_pdata);
 	imx6q_add_imx_snvs_rtc();
 
 	imx6q_add_imx_i2c(0, &mx6q_seco_UDOO_i2c0_data);
@@ -972,6 +1120,7 @@ static void __init mx6q_seco_UDOO_reserve(void)
 {
 	phys_addr_t phys;
 #if defined(CONFIG_MXC_GPU_VIV) || defined(CONFIG_MXC_GPU_VIV_MODULE)
+	imx6q_gpu_pdata.reserved_mem_size = gpu_reserved_mem;
 	if (imx6q_gpu_pdata.reserved_mem_size) {
 		phys = memblock_alloc_base(imx6q_gpu_pdata.reserved_mem_size,
 					   SZ_4K, SZ_1G);
