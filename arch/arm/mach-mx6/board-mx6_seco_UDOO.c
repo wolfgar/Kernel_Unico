@@ -35,7 +35,6 @@
 #include <linux/i2c/pca953x.h>
 #include <linux/ata.h>
 #include <linux/mtd/mtd.h>
-#include <linux/mtd/map.h>
 #include <linux/mtd/partitions.h>
 #include <linux/regulator/consumer.h>
 #include <linux/pmic_external.h>
@@ -1040,8 +1039,10 @@ static void __init mx6_seco_UDOO_board_init(void)
 	imx6q_add_mxc_hdmi(&hdmi_data);
 
 	imx6q_add_anatop_thermal_imx(1, &mx6q_seco_UDOO_anatop_thermal_data);
+#ifdef CONFIG_FEC
 	mx6q_seco_UDOO_fec_phy_reset(NULL);
 	imx6_init_fec(fec_data);
+#endif
 	imx6q_add_pm_imx(0, &mx6q_seco_UDOO_pm_data);
 
 	imx6q_add_sdhci_usdhc_imx(2, &mx6q_seco_UDOO_sd3_data);

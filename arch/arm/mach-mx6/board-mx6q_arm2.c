@@ -341,6 +341,7 @@ static int mx6_arm2_fec_phy_init(struct phy_device *phydev)
 {
 	unsigned short val;
 
+#ifdef CONFIG_PHYLIB
 	/* Ar8031 phy SmartEEE feature cause link status generates glitch,
 	 * which cause ethernet link down/up issue, so disable SmartEEE
 	 */
@@ -371,6 +372,7 @@ static int mx6_arm2_fec_phy_init(struct phy_device *phydev)
 	val = phy_read(phydev, 0x0);
 	if (val & BMCR_PDOWN)
 		phy_write(phydev, 0x0, (val & ~BMCR_PDOWN));
+#endif
 	return 0;
 }
 
@@ -378,13 +380,14 @@ static int mx6_arm2_fec_power_hibernate(struct phy_device *phydev)
 {
 	unsigned short val;
 
+#ifdef CONFIG_PHYLIB
 	/*set AR8031 debug reg 0xb to hibernate power*/
 	phy_write(phydev, 0x1d, 0xb);
 	val = phy_read(phydev, 0x1e);
 
 	val |= 0x8000;
 	phy_write(phydev, 0x1e, val);
-
+#endif
 	return 0;
 }
 
