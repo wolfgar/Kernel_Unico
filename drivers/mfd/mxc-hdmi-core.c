@@ -104,13 +104,14 @@ EXPORT_SYMBOL(hdmi_set_blank_state);
 static void hdmi_audio_abort_stream(struct snd_pcm_substream *substream)
 {
 	unsigned long flags;
-
+#if CONFIG_SND
 	snd_pcm_stream_lock_irqsave(substream, flags);
 
 	if (snd_pcm_running(substream))
 		substream->ops->trigger(substream, SNDRV_PCM_TRIGGER_STOP);
 
 	snd_pcm_stream_unlock_irqrestore(substream, flags);
+#endif
 }
 
 int mxc_hdmi_abort_stream(void)
@@ -144,6 +145,7 @@ EXPORT_SYMBOL(check_hdmi_state);
 
 int mxc_hdmi_register_audio(struct snd_pcm_substream *substream)
 {
+#ifdef CONFIG_SND
 	unsigned long flags, flags1;
 	int ret = 0;
 
@@ -163,6 +165,9 @@ int mxc_hdmi_register_audio(struct snd_pcm_substream *substream)
 	snd_pcm_stream_unlock_irqrestore(substream, flags);
 
 	return ret;
+#else
+	return -EINVAL;
+#endif
 }
 EXPORT_SYMBOL(mxc_hdmi_register_audio);
 
